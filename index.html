@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>제주 SAFE 119 - 보행자 안전 빅데이터 융합 길안내</title>
+    
+    <!-- PWA 앱 변환용 설정 태그 -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#d9534f">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3063/3063822.png">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; }
+        body, html { width: 100%; height: 100%; overflow: hidden; display: flex; flex-direction: row; }
+        
+        #sidebar {
+            width: 380px; height: 100%; background: #ffffff; z-index: 1000;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.15); display: flex; flex-direction: column; padding: 20px;
+            overflow-y: auto; position: relative; flex-shrink: 0;
+        }
+
+        @media (max-width: 768px) {
+            body, html { flex-direction: column-reverse; }
+            #sidebar { width: 100%; height: 50%; }
+            #map { width: 100%; height: 50%; }
+        }
+
+        h2 { color: #d9534f; margin-bottom: 15px; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+        .input-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+        label { font-size: 13px; font-weight: bold; color: #555; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        
+        .btn-main {
+            width: 100%; padding: 12px; background: #d9534f; color: white;
+            border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 5px;
+        }
+        .btn-gps {
+            padding: 10px; background: #20c997; color: white; border: none; border-radius: 6px;
+            font-size: 13px; font-weight: bold; cursor: pointer; margin-bottom: 5px; text-align: center;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+
+        .btn-sos {
+            width: 100%; padding: 14px; background: #ff0000; color: white;
+            border: 2px solid #b30000; border-radius: 8px; font-size: 16px; font-weight: bold;
+            cursor: pointer; margin-top: 15px; animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 12px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+
+        .data-status-card {
+            margin-top: 10px; padding: 10px; background: #eef9f2; border: 1px solid #b2f2bb;
+            border-radius: 6px; font-size: 12px; color: #2b8a3e; display: none;
+        }
+
+        #result-box {
+            margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef; display: none;
+        }
+        .route-card { margin-bottom: 15px; padding: 12px; border-radius: 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .fastest { border-left: 5px solid #007bff; }
+        .safest { border-left: 5px solid #d9534f; }
+        .route-title { font-weight: bold; margin-bottom: 8px; font-size: 15px; }
+        .info { font-size: 13px; color: #444; line-height: 1.6; }
+
+        .progress-container { margin-top: 6px; background-color: #e9ecef; border-radius: 10px; height: 10px; width: 100%; overflow: hidden; }
+        .progress-bar-sidewalk { background-color: #40c057; height: 100%; width: 0%; transition: width 0.5s; }
+
+        #map { flex: 1; height: 100%; position: relative; }
+        #loading { display: none; text-align: center; color: #666; margin-top: 15px; font-weight: bold; }
+
+        .map-control-panel {
+            position: absolute; top: 20px; right: 20px; z-index: 1000;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .btn-map-control {
+            background: #ffffff; border-radius: 20px; padding: 10px 18px;
+            font-weight: bold; font-size: 13px; cursor: pointer;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.25); transition: all 0.2s; border: none;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .btn-pop-toggle { border: 2px solid #fd7e14; color: #fd7e14; }
+        .btn-pop-toggle:hover { background: #fff4e6; }
+        .btn-hazard-toggle { border: 2px solid #e03131; color: #e03131; }
+        .btn-hazard-toggle:hover { background: #ffe3e3; }
+        .btn-hazard-toggle.active { background: #e03131; color: white; }
+
+        #reportModal {
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 320px; background: white; padding: 20px; border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3); z-index: 2000;
+        }
+        #modalOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1999; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>🛡️ 제주 SAFE 119</h2>
+        
+        <button class="btn-gps" onclick="getMyLocation()">🎯 초고정밀 내 GPS 현재 위치 측위</button>
+
+        <div class="input-group">
+            <input type="text" id="startInput" placeholder="출발지 (예: 제주시청 또는 GPS 위치)" value="제주시청">
+            <input type="text" id="endInput" placeholder="도착지 (예: 제주대학교)" value="제주대학교">
+            
+            <label for="modeSelect">🧭 융합 안심 길안내 모드</label>
+            <select id="modeSelect">
+                <option value="max_safe">🛡️ 100% 인도 & 유동인구 융합 안심 모드</option>
+                <option value="pet">🐾 반려동물 안심 산책 모드</option>
+                <option value="auto">⏱️ 시간대별 자동 모드</option>
+                <option value="fast">⚡ 최단 거리 우선 모드</option>
+            </select>
+        </div>
+        
+        <button class="btn-main" onclick="searchRoute()">보행자 안전 경로 탐색</button>
+
+        <button class="btn-sos" onclick="triggerSOS()">🚨 SOS 긴급 비상 신고 (112/119)</button>
+
+        <div id="data-status" class="data-status-card">
+            <div id="status-mode"><b>모드:</b> -</div>
+            <div id="status-pop"><b>👥 제주 5종 유동인구 활성지수:</b> <span id="pop-val">0.0</span>/1.0</div>
+            <div id="status-data"><b>💡 연동 데이터:</b> 가로등 7.3만개 + 유동인구 + CCTV/비상벨 + 위험제보</div>
+        </div>
+
+        <div id="loading">⏳ 가로등·유동인구·인도망 융합 연산 중...</div>
+
+        <div id="result-box">
+            <div class="route-card safest">
+                <div class="route-title" style="color: #d9534f;">🔴 융합 안심 추천 경로</div>
+                <div class="info" id="safe-info">-</div>
+                <div style="margin-top: 8px; font-size: 11px; font-weight: bold; color: #2b8a3e;">인도/보행자전용 비율 (<span id="safe-side-text">0%</span>)</div>
+                <div class="progress-container"><div id="safe-side-bar" class="progress-bar-sidewalk"></div></div>
+            </div>
+
+            <div class="route-card fastest">
+                <div class="route-title" style="color: #007bff;">🔵 최단 거리 참고 경로</div>
+                <div class="info" id="fast-info">-</div>
+                <div style="margin-top: 8px; font-size: 11px; font-weight: bold; color: #1864ab;">인도/보행자전용 비율 (<span id="fast-side-text">0%</span>)</div>
+                <div class="progress-container"><div id="fast-side-bar" class="progress-bar-sidewalk" style="background-color: #74c0fc;"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="map">
+        <div class="map-control-panel">
+            <button id="popToggleBtn" class="btn-map-control btn-pop-toggle" onclick="togglePopLayer()">🔥 유동인구 밀도 지도 켜기</button>
+            <button id="hazardToggleBtn" class="btn-map-control btn-hazard-toggle" onclick="toggleHazardMode()">⚠️ 보행 위험 구역 제보하기</button>
+        </div>
+    </div>
+
+    <div id="modalOverlay" onclick="closeModal()"></div>
+    <div id="reportModal">
+        <h3 style="margin-bottom: 10px; color: #d9534f;">⚠️ 보행 위험 구역 제보</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">선택한 위치의 위험 요소를 등록하여 다른 보행자의 안전을 지켜주세요.</p>
+        
+        <label style="font-size: 12px; font-weight: bold;">제보 유형</label>
+        <select id="hazardType" style="margin-bottom: 10px;">
+            <option value="가로등 고장">가로등 고장 (야간 어두움)</option>
+            <option value="보육/공사중 불편">공사 중 보행 위험</option>
+            <option value="야간 우범 지역">야간 우범/외딴지역</option>
+        </select>
+
+        <label style="font-size: 12px; font-weight: bold;">상세 설명</label>
+        <input type="text" id="hazardDesc" placeholder="예: 가로등이 꺼져 있어 어두움" style="margin-bottom: 15px;">
+
+        <button class="btn-main" onclick="submitHazardReport()">제보 등록하기</button>
+    </div>
+
+    <script>
+        var map = L.map('map').setView([33.4996213, 126.5311884], 13);
+        L.tileLayer('https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png', {
+            maxZoom: 19, attribution: '© 대한민국 국토교통부 V-World'
+        }).addTo(map);
+
+        var currentLayers = [];
+        var popLayers = [];
+        var hazardMarkers = [];
+        var myGpsMarker = null;
+        var myGpsCircle = null;
+        var clickedLatLng = null;
+        var isHazardReportMode = false;
+
+        loadHazards();
+
+        map.on('click', function(e) {
+            if (isHazardReportMode) {
+                clickedLatLng = e.latlng;
+                document.getElementById('modalOverlay').style.display = 'block';
+                document.getElementById('reportModal').style.display = 'block';
+            }
+        });
+
+        function toggleHazardMode() {
+            var btn = document.getElementById('hazardToggleBtn');
+            isHazardReportMode = !isHazardReportMode;
+            if (isHazardReportMode) {
+                btn.classList.add('active');
+                btn.innerText = "📍 지도의 위험 위치를 클릭하세요";
+            } else {
+                btn.classList.remove('active');
+                btn.innerText = "⚠️ 보행 위험 구역 제보하기";
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').style.display = 'none';
+            document.getElementById('reportModal').style.display = 'none';
+            toggleHazardMode();
+        }
+
+        function getMyLocation() {
+            if (navigator.geolocation) {
+                var btn = document.querySelector('.btn-gps');
+                btn.innerText = "🛰️ 위성 GPS 신호 측위 중...";
+
+                var gpsOptions = {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                };
+
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    var accuracy = Math.round(position.coords.accuracy);
+
+                    if (myGpsMarker) map.removeLayer(myGpsMarker);
+                    if (myGpsCircle) map.removeLayer(myGpsCircle);
+
+                    myGpsCircle = L.circle([lat, lng], {
+                        radius: accuracy, color: '#20c997', fillColor: '#20c997', fillOpacity: 0.15
+                    }).addTo(map);
+
+                    myGpsMarker = L.circleMarker([lat, lng], {
+                        radius: 8, fillColor: '#007bff', color: '#ffffff', weight: 3, fillOpacity: 1
+                    }).addTo(map).bindPopup(`<b>🎯 내 고정밀 GPS 위치</b><br>오차 범위: ±${accuracy}m`).openPopup();
+
+                    map.setView([lat, lng], 16);
+                    document.getElementById('startInput').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                    btn.innerText = "🎯 초고정밀 내 GPS 현재 위치 측위";
+                }, function(err) {
+                    btn.innerText = "🎯 초고정밀 내 GPS 현재 위치 측위";
+                    alert("GPS 위치 수신 실패 (" + err.message + ")\n주소창 좌측 위치 권한 허용 상태를 확인해 주세요.");
+                }, gpsOptions);
+            } else {
+                alert("이 브라우저에서는 GPS 위치 조회를 지원하지 않습니다.");
+            }
+        }
+
+        function triggerSOS() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var lat = position.coords.latitude.toFixed(6);
+                    var lng = position.coords.longitude.toFixed(6);
+                    var msg = `[긴급 SOS 비상신고]\n위험 상황 발생!\n현재 위치: 위도 ${lat}, 경도 ${lng}\n(제주 SAFE 119 앱 자동 긴급 전송)`;
+                    alert(`🚨 112/119 긴급 센터로 정확한 GPS 좌표가 전송되었습니다!\n\n${msg}`);
+                }, null, { enableHighAccuracy: true });
+            } else {
+                alert("🚨 긴급 SOS 비상 신고가 접수되었습니다!");
+            }
+        }
+
+        async function loadHazards() {
+            try {
+                var res = await fetch('/api/hazards');
+                var data = await res.json();
+                data.hazards.forEach(h => {
+                    var m = L.marker([h.lat, h.lng]).addTo(map)
+                        .bindPopup(`<b>⚠️ [위험 제보] ${h.type}</b><br>${h.desc}`);
+                    hazardMarkers.push(m);
+                });
+            } catch(e) {}
+        }
+
+        async function submitHazardReport() {
+            var type = document.getElementById('hazardType').value;
+            var desc = document.getElementById('hazardDesc').value;
+            if(!desc) return alert("설명을 입력해 주세요!");
+
+            try {
+                var res = await fetch('/api/report_hazard', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ lat: clickedLatLng.lat, lng: clickedLatLng.lng, type: type, desc: desc })
+                });
+                var data = await res.json();
+                alert(data.message);
+                closeModal();
+                
+                L.marker([clickedLatLng.lat, clickedLatLng.lng]).addTo(map)
+                    .bindPopup(`<b>⚠️ [신규 제보] ${type}</b><br>${desc}`).openPopup();
+            } catch(e) {
+                alert("제보 등록에 실패했습니다.");
+            }
+        }
+
+        function clearMap() {
+            currentLayers.forEach(layer => map.removeLayer(layer));
+            currentLayers = [];
+        }
+
+        async function togglePopLayer() {
+            var btn = document.getElementById('popToggleBtn');
+            if(popLayers.length > 0) {
+                popLayers.forEach(l => map.removeLayer(l));
+                popLayers = [];
+                btn.innerText = "🔥 유동인구 밀도 지도 켜기";
+            } else {
+                btn.innerText = "⏳ 인구 밀도 로딩 중...";
+                var res = await fetch('/api/pop_grid');
+                var data = await res.json();
+                data.spots.forEach(spot => {
+                    var color = spot.score > 0.7 ? '#ff2a2a' : (spot.score > 0.45 ? '#ffa500' : '#3388ff');
+                    var circle = L.circle([spot.lat, spot.lng], {
+                        color: color, fillColor: color, fillOpacity: 0.35, radius: 600
+                    }).addTo(map).bindPopup(`<b>${spot.name}</b><br>👥 유동인구 지수: <b>${spot.score}</b>`);
+                    popLayers.push(circle);
+                });
+                btn.innerText = "❌ 유동인구 밀도 지도 끄기";
+            }
+        }
+
+        async function searchRoute() {
+            var start = document.getElementById('startInput').value;
+            var end = document.getElementById('endInput').value;
+            var mode = document.getElementById('modeSelect').value;
+
+            if(!start || !end) return alert("출발지와 도착지를 입력하세요!");
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result-box').style.display = 'none';
+            document.getElementById('data-status').style.display = 'none';
+            clearMap();
+
+            try {
+                var res = await fetch(`/api/navigate?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&mode=${mode}`);
+                var data = await res.json();
+
+                document.getElementById('loading').style.display = 'none';
+
+                if(!data.success) return alert(data.error || "경로를 찾을 수 없습니다.");
+
+                document.getElementById('data-status').style.display = 'block';
+                document.getElementById('status-mode').innerHTML = `<b>알고리즘:</b> ${data.mode_desc}`;
+                document.getElementById('pop-val').innerText = `${data.pop_score}`;
+
+                document.getElementById('result-box').style.display = 'block';
+                document.getElementById('safe-info').innerHTML = 
+                    `거리: ${(data.safest_path.distance_m/1000).toFixed(2)}km / 예상시간: <b>${data.safest_path.time_min}분</b><br>` +
+                    `💡 <b>확보 가로등: ${data.safest_path.lights}개</b>`;
+
+                document.getElementById('fast-info').innerHTML = 
+                    `거리: ${(data.fastest_path.distance_m/1000).toFixed(2)}km / 예상시간: ${data.fastest_path.time_min}분<br>` +
+                    `💡 확보 가로등: ${data.fastest_path.lights}개`;
+
+                document.getElementById('safe-side-text').innerText = `${data.safest_path.sidewalk_ratio}%`;
+                document.getElementById('safe-side-bar').style.width = `${data.safest_path.sidewalk_ratio}%`;
+
+                document.getElementById('fast-side-text').innerText = `${data.fastest_path.sidewalk_ratio}%`;
+                document.getElementById('fast-side-bar').style.width = `${data.fastest_path.sidewalk_ratio}%`;
+
+                var fastPolyline = L.polyline(data.fastest_path.coords, {color: '#007bff', weight: 5, opacity: 0.7}).addTo(map);
+                var safePolyline = L.polyline(data.safest_path.coords, {color: '#d9534f', weight: 7, opacity: 0.9}).addTo(map);
+
+                var startMarker = L.marker([data.start.lat, data.start.lng]).addTo(map).bindPopup("출발: " + data.start.name);
+                var endMarker = L.marker([data.end.lat, data.end.lng]).addTo(map).bindPopup("도착: " + data.end.name);
+
+                currentLayers.push(fastPolyline, safePolyline, startMarker, endMarker);
+                map.fitBounds(L.latLngBounds([[data.start.lat, data.start.lng], [data.end.lat, data.end.lng]]), {padding: [50, 50]});
+
+            } catch (err) {
+                document.getElementById('loading').style.display = 'none';
+                alert("서버 통신 중 에러가 발생했습니다.");
+            }
+        }
+    </script>
+</body>
+</html>
