@@ -1,0 +1,6 @@
+*.csv
+*.xls
+jeju119.zip
+__pycache__/
+cache/
+convert_db.py
